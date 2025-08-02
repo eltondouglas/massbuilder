@@ -80,18 +80,18 @@ class FileTab(ttk.Frame):
         campo_frame = ttk.LabelFrame(self.campos_frame, text=f"Campo {frame_id + 1}", padding=10)
         campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
 
-        nome_var = tk.StringVar(value=config.get('nome', f'campo_{frame_id + 1}'));
+        nome_var = tk.StringVar(value=config.get('nome', f'campo_{frame_id + 1}'))
         tipos = ['integer', 'float', 'string', 'nome_pessoa', 'boolean', 'datetime', 'uuid', 'lista_opcoes', 'regex',
-                 'chave_estrangeira'];
-        tipo_var = tk.StringVar(value=config.get('tipo', 'string'));
-        e_pk_var = tk.BooleanVar(value=config.get('e_pk', False));
-        repeticao_var = tk.StringVar(value=str(config.get('repeticao', '0')));
-        limite1_var = tk.StringVar(value=str(config.get('limite', ['', ''])[0]));
-        limite2_var = tk.StringVar(value=str(config.get('limite', ['', ''])[1]));
-        opcoes_var = tk.StringVar(value=", ".join(config.get('opcoes', [])));
-        regex_var = tk.StringVar(value=config.get('regex_pattern', ''));
-        fk_arquivo_var = tk.StringVar(value=config.get('fk_arquivo', ''));
-        fk_campo_var = tk.StringVar(value=config.get('fk_campo', ''));
+                 'chave_estrangeira']
+        tipo_var = tk.StringVar(value=config.get('tipo', 'string'))
+        e_pk_var = tk.BooleanVar(value=config.get('e_pk', False))
+        repeticao_var = tk.StringVar(value=str(config.get('repeticao', '0')))
+        limite1_var = tk.StringVar(value=str(config.get('limite', ['', ''])[0]))
+        limite2_var = tk.StringVar(value=str(config.get('limite', ['', ''])[1]))
+        opcoes_var = tk.StringVar(value=", ".join(config.get('opcoes', [])))
+        regex_var = tk.StringVar(value=config.get('regex_pattern', ''))
+        fk_arquivo_var = tk.StringVar(value=config.get('fk_arquivo', ''))
+        fk_campo_var = tk.StringVar(value=config.get('fk_campo', ''))
         fk_cardinalidade_var = tk.StringVar(value=config.get('cardinalidade', 'Um-para-Muitos (1:N)'))
 
         ttk.Label(campo_frame, text="Nome:").grid(row=0, column=0, sticky="w")
@@ -123,12 +123,12 @@ class FileTab(ttk.Frame):
                                  command=lambda index=frame_id: self.remover_campo(index))
         btn_remover.pack(side="left", padx=(5, 0))
 
-        params_frame = ttk.Frame(campo_frame);
-        params_frame.grid(row=2, column=0, columnspan=7, sticky='ew', pady=(10, 0));
-        params_frame.grid_columnconfigure(1, weight=3);
-        params_frame.grid_columnconfigure(2, weight=2);
+        params_frame = ttk.Frame(campo_frame)
+        params_frame.grid(row=2, column=0, columnspan=7, sticky='ew', pady=(10, 0))
+        params_frame.grid_columnconfigure(1, weight=3)
+        params_frame.grid_columnconfigure(2, weight=2)
         params_frame.grid_columnconfigure(3, weight=1)
-        label_limites = ttk.Label(params_frame, text="Parâmetros:");
+        label_limites = ttk.Label(params_frame, text="Parâmetros:")
         entry_limite1, entry_limite2, entry_opcoes_regex = ttk.Entry(params_frame, textvariable=limite1_var), ttk.Entry(
             params_frame, textvariable=limite2_var), ttk.Entry(params_frame, textvariable=opcoes_var)
         combo_fk_arquivo, combo_fk_campo = ttk.Combobox(params_frame, textvariable=fk_arquivo_var,
@@ -140,38 +140,47 @@ class FileTab(ttk.Frame):
 
         def _atualizar_parametros(*args):
             for widget in params_frame.winfo_children(): widget.grid_forget()
-            tipo = tipo_var.get();
+            tipo = tipo_var.get()
             label_limites.grid(row=0, column=0, sticky="w")
             if tipo in ['integer', 'float', 'string']:
-                label_limites.config(text="Min/Max:"); entry_limite1.grid(row=0, column=1,
-                                                                          sticky="ew"); entry_limite2.grid(row=0,
-                                                                                                           column=2,
-                                                                                                           sticky="ew")
+                label_limites.config(text="Min/Max:")
+                entry_limite1.grid(row=0, column=1,
+                                   sticky="ew")
+                entry_limite2.grid(row=0,
+                                   column=2,
+                                   sticky="ew")
             elif tipo == 'datetime':
-                label_limites.config(text="Data Início/Fim:"); entry_limite1.grid(row=0, column=1,
-                                                                                  sticky="ew"); entry_limite2.grid(
+                label_limites.config(text="Data Início/Fim:")
+                entry_limite1.grid(row=0, column=1,
+                                   sticky="ew")
+                entry_limite2.grid(
                     row=0, column=2, sticky="ew")
             elif tipo == 'lista_opcoes':
-                label_limites.config(text="Opções (,):"); entry_opcoes_regex.config(
-                    textvariable=opcoes_var); entry_opcoes_regex.grid(row=0, column=1, sticky="ew", columnspan=3)
+                label_limites.config(text="Opções (,):")
+                entry_opcoes_regex.config(
+                    textvariable=opcoes_var)
+                entry_opcoes_regex.grid(row=0, column=1, sticky="ew", columnspan=3)
             elif tipo == 'regex':
-                label_limites.config(text="Padrão Regex:"); entry_opcoes_regex.config(
-                    textvariable=regex_var); entry_opcoes_regex.grid(row=0, column=1, sticky="ew", columnspan=3)
+                label_limites.config(text="Padrão Regex:")
+                entry_opcoes_regex.config(
+                    textvariable=regex_var)
+                entry_opcoes_regex.grid(row=0, column=1, sticky="ew", columnspan=3)
             elif tipo == 'chave_estrangeira':
-                label_limites.config(text="Relação:");
-                arquivos_e_pks = self.app_controller.get_lista_de_abas_e_pks(aba_atual=self);
-                combo_fk_arquivo['values'] = list(arquivos_e_pks.keys());
-                combo_fk_arquivo.grid(row=0, column=1, sticky="ew");
-                combo_fk_campo.grid(row=0, column=2, sticky="ew");
+                label_limites.config(text="Relação:")
+                arquivos_e_pks = self.app_controller.get_lista_de_abas_e_pks(aba_atual=self)
+                combo_fk_arquivo['values'] = list(arquivos_e_pks.keys())
+                combo_fk_arquivo.grid(row=0, column=1, sticky="ew")
+                combo_fk_campo.grid(row=0, column=2, sticky="ew")
                 combo_fk_cardinalidade.grid(row=0, column=3, sticky="ew", padx=(5, 0))
 
                 def on_fk_arquivo_selecionado(event):
-                    fk_campo_var.set(''); combo_fk_campo['values'] = arquivos_e_pks.get(fk_arquivo_var.get(), [])
+                    fk_campo_var.set('')
+                    combo_fk_campo['values'] = arquivos_e_pks.get(fk_arquivo_var.get(), [])
 
                 combo_fk_arquivo.bind("<<ComboboxSelected>>", on_fk_arquivo_selecionado)
                 if fk_arquivo_var.get(): on_fk_arquivo_selecionado(None)
 
-        tipo_var.trace_add("write", _atualizar_parametros);
+        tipo_var.trace_add("write", _atualizar_parametros)
         _atualizar_parametros()
 
         self.frames_campos.append({
@@ -217,7 +226,7 @@ class FileTab(ttk.Frame):
         if (direcao == -1 and index == 0) or (direcao == 1 and index == len(self.frames_campos) - 1): return
         nova_posicao = index + direcao
         self.frames_campos[index], self.frames_campos[nova_posicao] = self.frames_campos[nova_posicao], \
-        self.frames_campos[index]
+            self.frames_campos[index]
         self._atualizar_comandos_e_titulos()
         self._redesenhar_layout_campos()
 
@@ -228,14 +237,14 @@ class FileTab(ttk.Frame):
                 if isinstance(widget, ttk.Combobox): widget['values'] = nomes_campos; break
 
     def adicionar_regra_sort(self, config=None):
-        config = config or {};
-        rule_id = len(self.frames_sort);
-        rule_frame = ttk.Frame(self.sort_rules_frame);
+        config = config or {}
+        rule_id = len(self.frames_sort)
+        rule_frame = ttk.Frame(self.sort_rules_frame)
         rule_frame.pack(fill="x", pady=2)
-        nomes_campos = [f['nome'].get() for f in self.frames_campos if f['nome'].get()];
-        campo_var = tk.StringVar(value=config.get('campo', ''));
+        nomes_campos = [f['nome'].get() for f in self.frames_campos if f['nome'].get()]
+        campo_var = tk.StringVar(value=config.get('campo', ''))
         ordem_var = tk.StringVar(value=config.get('ordem', 'Ascendente'))
-        ttk.Label(rule_frame, text="Ordenar por:").pack(side="left");
+        ttk.Label(rule_frame, text="Ordenar por:").pack(side="left")
         ttk.Combobox(rule_frame, textvariable=campo_var, values=nomes_campos, state="readonly", width=30).pack(
             side="left", padx=5)
         ttk.Combobox(rule_frame, textvariable=ordem_var, values=["Ascendente", "Descendente"], state="readonly",
@@ -266,8 +275,10 @@ class FileTab(ttk.Frame):
             elif tipo == 'regex':
                 campo_cfg['regex_pattern'] = widgets['regex'].get()
             elif tipo == 'chave_estrangeira':
-                campo_cfg['fk_arquivo'] = widgets['fk_arquivo'].get(); campo_cfg['fk_campo'] = widgets[
-                    'fk_campo'].get(); campo_cfg['cardinalidade'] = widgets['fk_cardinalidade'].get()
+                campo_cfg['fk_arquivo'] = widgets['fk_arquivo'].get()
+                campo_cfg['fk_campo'] = widgets[
+                    'fk_campo'].get()
+                campo_cfg['cardinalidade'] = widgets['fk_cardinalidade'].get()
             config_aba["campos"].append(campo_cfg)
         for rule_widgets in self.frames_sort: config_aba["regras_sort"].append(
             {'campo': rule_widgets['campo'].get(), 'ordem': rule_widgets['ordem'].get()})
@@ -276,10 +287,10 @@ class FileTab(ttk.Frame):
         return config_aba
 
     def carregar_config(self, config):
-        self.nome_arquivo_var.set(config.get("nome_arquivo", ""));
-        self.num_linhas_var.set(str(config.get("num_linhas", 100)));
+        self.nome_arquivo_var.set(config.get("nome_arquivo", ""))
+        self.num_linhas_var.set(str(config.get("num_linhas", 100)))
         self.codificacao_var.set(config.get("codificacao", "utf-8"))
-        separador_salvo = config.get("separador", ",");
+        separador_salvo = config.get("separador", ",")
         self.separador_var.set(
             {v: k for k, v in self.app_controller.separador_map.items()}.get(separador_salvo, separador_salvo))
         for campo_config in config.get("campos", []): self.adicionar_campo(campo_config)
