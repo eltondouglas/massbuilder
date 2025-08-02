@@ -7,15 +7,15 @@ import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-# Nenhuma mudança na lógica de geração de dados ou nas classes auxiliares.
-# O código até a classe da GUI permanece o mesmo.
-
+# Nenhuma nova biblioteca é necessária.
 try:
     import exrex
 except ImportError:
     messagebox.showerror("Biblioteca Faltando", "A biblioteca 'exrex' é necessária. Instale-a com: pip install exrex")
     exit()
 
+
+# --- CLASSES AUXILIARES E LÓGICA DE GERAÇÃO (SEM ALTERAÇÕES) ---
 
 class Tooltip:
     def __init__(self, widget, text):
@@ -80,13 +80,19 @@ def _criar_valor_atomico(campo):
 
 
 def gerar_dados_gui(configuracoes):
-    nome_arquivo, num_linhas, campos, separador, codificacao = configuracoes.get('nome_arquivo',
-                                                                                 'massa_de_dados.csv'), configuracoes.get(
-        'num_linhas', 100), configuracoes.get('campos', []), configuracoes.get('separador', ','), configuracoes.get(
-        'codificacao', 'utf-8')
+    nome_arquivo, num_linhas, campos_cfg, separador, codificacao, regras_sort = \
+        configuracoes.get('nome_arquivo', 'massa_de_dados.csv'), configuracoes.get('num_linhas', 100), \
+            configuracoes.get('campos', []), configuracoes.get('separador', ','), \
+            configuracoes.get('codificacao', 'utf-8'), configuracoes.get('regras_sort', [])
+
     if not nome_arquivo.lower().endswith('.csv'): nome_arquivo += '.csv'
+
     try:
-        for campo in campos:
+        if num_linhas > 500000 and regras_sort:
+            if not messagebox.askyesno("Aviso de Desempenho",
+                                       f"Você está gerando {num_linhas} linhas com ordenação.\nIsso pode consumir bastante memória RAM.\n\nDeseja continuar?"):
+                return
+        for campo in campos_cfg:
             if campo.get('repeticao') == 1:
                 if campo['tipo'] == 'integer':
                     min_v, max_v = int(campo['limite'][0]), int(campo['limite'][1])
@@ -95,29 +101,42 @@ def gerar_dados_gui(configuracoes):
                 elif campo['tipo'] == 'lista_opcoes' and len(campo['opcoes']) < num_linhas:
                     raise ValueError(
                         f"Campo '{campo['nome']}': N° de opções ({len(campo['opcoes'])}) menor que n° de linhas ({num_linhas}).")
-        geradores = [_criar_gerador_de_campo(c, num_linhas) for c in campos]
+
+        cabecalho = [c['nome'] for c in campos_cfg]
+        geradores = [_criar_gerador_de_campo(c, num_linhas) for c in campos_cfg]
+        dados_em_memoria = [[next(g) for g in geradores] for _ in range(num_linhas)]
+
+        if regras_sort:
+            indices_sort = {nome: i for i, nome in enumerate(cabecalho)}
+            for regra in reversed(regras_sort):
+                nome_campo, ordem_desc = regra['campo'], regra['ordem'] == 'Descendente'
+                if nome_campo in indices_sort:
+                    dados_em_memoria.sort(key=lambda row: row[indices_sort[nome_campo]], reverse=ordem_desc)
+
         with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
             writer = csv.writer(file, delimiter=separador)
-            writer.writerow([c['nome'] for c in campos])
-            for _ in range(num_linhas): writer.writerow([next(g) for g in geradores])
-        messagebox.showinfo("Sucesso",
-                            f"Arquivo '{nome_arquivo}' gerado com sucesso!\nSeparador: '{separador}'\nCodificação: {codificacao}")
+            writer.writerow(cabecalho)
+            writer.writerows(dados_em_memoria)
+
+        messagebox.showinfo("Sucesso", f"Arquivo '{nome_arquivo}' gerado e ordenado com sucesso!")
+
     except (ValueError, TypeError) as e:
         messagebox.showerror("Erro de Geração ou Configuração", str(e))
     except Exception as e:
         messagebox.showerror("Erro Inesperado", f"Ocorreu um erro: {e}")
 
 
-# --- INTERFACE GRÁFICA (GUI) CORRIGIDA ---
+# --- INTERFACE GRÁFICA CORRIGIDA E ESTABILIZADA ---
 
 class AppGeradorDados(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gerador de Massa de Dados v2.3 (Bug Fix)")  # Versão atualizada
-        self.geometry("950x700")
+        self.title("Gerador de Massa de Dados v2.6 (Estável)")
+        self.geometry("950x800")
 
         self.separador_map = {"Vírgula (,)": ",", "Ponto e Vírgula (;)": ";", "Tab (    )": "\t", "Pipe (|)": "|"}
         self.frames_campos = []
+        self.frames_sort = []
         self._criar_widgets()
 
     def _update_scrollregion(self):
@@ -125,69 +144,80 @@ class AppGeradorDados(tk.Tk):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def _criar_widgets(self):
-        control_frame = ttk.Frame(self, padding="10");
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill="both", expand=True)
+
+        control_frame = ttk.Frame(main_frame, padding="10");
         control_frame.pack(side="top", fill="x", expand=False)
         btn_carregar = ttk.Button(control_frame, text="Carregar Configuração", command=self.carregar_configuracao);
         btn_carregar.pack(side="left", padx=5);
-        Tooltip(btn_carregar, "Carrega uma configuração salva de um arquivo .json")
+        Tooltip(btn_carregar, "Carrega uma configuração salva")
         btn_salvar = ttk.Button(control_frame, text="Salvar Configuração", command=self.salvar_configuracao);
         btn_salvar.pack(side="left", padx=5);
-        Tooltip(btn_salvar, "Salva a configuração atual em um arquivo .json")
+        Tooltip(btn_salvar, "Salva a configuração atual")
         btn_limpar = ttk.Button(control_frame, text="Limpar Tudo", command=self.limpar_sessao);
         btn_limpar.pack(side="left", padx=5);
-        Tooltip(btn_limpar, "Reseta a interface para começar do zero")
+        Tooltip(btn_limpar, "Reseta a interface")
 
-        config_geral_frame = ttk.LabelFrame(self, text="Configurações Gerais", padding="10");
+        config_geral_frame = ttk.LabelFrame(main_frame, text="Configurações Gerais", padding="10");
         config_geral_frame.pack(side="top", fill="x", expand=False, padx=10, pady=5)
-
         ttk.Label(config_geral_frame, text="Nome do Arquivo CSV:").grid(row=0, column=0, padx=5, pady=5, sticky="w");
         self.nome_arquivo_var = tk.StringVar(value="massa_de_dados.csv");
         entry_nome_arquivo = ttk.Entry(config_geral_frame, textvariable=self.nome_arquivo_var, width=40);
         entry_nome_arquivo.grid(row=0, column=1, padx=5, pady=5);
-        Tooltip(entry_nome_arquivo, "Nome do arquivo de saída. Será salvo como .csv")
+        Tooltip(entry_nome_arquivo, "Nome do arquivo de saída")
         ttk.Label(config_geral_frame, text="Quantidade de Linhas:").grid(row=0, column=2, padx=5, pady=5, sticky="w");
         self.num_linhas_var = tk.StringVar(value="100");
         entry_num_linhas = ttk.Entry(config_geral_frame, textvariable=self.num_linhas_var, width=15);
         entry_num_linhas.grid(row=0, column=3, padx=5, pady=5);
-        Tooltip(entry_num_linhas, "Número de registros (linhas) a serem gerados no arquivo")
+        Tooltip(entry_num_linhas, "Número de registros a serem gerados")
         ttk.Label(config_geral_frame, text="Separador:").grid(row=1, column=0, padx=5, pady=5, sticky="w");
         self.separador_var = tk.StringVar(value="Vírgula (,)");
         combo_separador = ttk.Combobox(config_geral_frame, textvariable=self.separador_var,
                                        values=list(self.separador_map.keys()));
         combo_separador.grid(row=1, column=1, padx=5, pady=5, sticky="ew");
-        Tooltip(combo_separador,
-                "Caractere usado para separar as colunas no arquivo.\nUse Ponto e Vírgula (;) para abrir direto no Excel (BR).")
+        Tooltip(combo_separador, "Caractere separador de colunas")
         ttk.Label(config_geral_frame, text="Codificação:").grid(row=1, column=2, padx=5, pady=5, sticky="w");
         codificacoes = ["utf-8", "latin-1", "windows-1252", "utf-16"];
         self.codificacao_var = tk.StringVar(value="utf-8");
         combo_codificacao = ttk.Combobox(config_geral_frame, textvariable=self.codificacao_var, values=codificacoes,
                                          state="readonly");
         combo_codificacao.grid(row=1, column=3, padx=5, pady=5, sticky="ew");
-        Tooltip(combo_codificacao,
-                "Codificação do arquivo de texto.\nUse 'latin-1' ou 'windows-1252' para compatibilidade\ncom caracteres especiais (ç, ã) no Excel.")
+        Tooltip(combo_codificacao, "Codificação do arquivo de texto")
         config_geral_frame.grid_columnconfigure(1, weight=1);
         config_geral_frame.grid_columnconfigure(3, weight=1)
 
-        header_frame = ttk.Frame(self);
-        header_frame.pack(fill="x", padx=10, pady=(10, 0))
-        btn_add = ttk.Button(header_frame, text="Adicionar Campo", command=self.adicionar_campo);
-        btn_add.pack(side="left");
-        Tooltip(btn_add, "Adiciona uma nova coluna à sua massa de dados")
+        campos_container = ttk.LabelFrame(main_frame, text="Definição dos Campos (Colunas)", padding="10");
+        campos_container.pack(side="top", fill="both", expand=True, padx=10, pady=(10, 0))
+        btn_add_campo = ttk.Button(campos_container, text="Adicionar Campo", command=self.adicionar_campo);
+        btn_add_campo.pack(side="top", anchor="w", pady=5);
+        Tooltip(btn_add_campo, "Adiciona uma nova coluna")
 
-        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        canvas_frame = ttk.Frame(campos_container);
+        canvas_frame.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(canvas_frame, borderwidth=0, highlightthickness=0)
         self.campos_frame = ttk.Frame(self.canvas)
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
         self.scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True, padx=10)
+        self.canvas.pack(side="left", fill="both", expand=True)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.campos_frame, anchor="nw")
         self.canvas.bind('<Configure>', self.on_canvas_configure)
 
-        action_frame = ttk.Frame(self, padding="10");
+        sort_frame = ttk.LabelFrame(main_frame, text="Configurações de Ordenação", padding="10");
+        sort_frame.pack(side="top", fill="x", expand=False, padx=10, pady=5)
+        btn_add_sort = ttk.Button(sort_frame, text="Adicionar Regra de Ordenação", command=self.adicionar_regra_sort);
+        btn_add_sort.pack(side="top", anchor="w");
+        Tooltip(btn_add_sort, "Adiciona um critério de ordenação")
+        self.sort_rules_frame = ttk.Frame(sort_frame);
+        self.sort_rules_frame.pack(side="top", fill="x", expand=True, pady=5)
+
+        action_frame = ttk.Frame(main_frame, padding="10");
         action_frame.pack(side="bottom", fill="x", expand=False)
         btn_gerar = ttk.Button(action_frame, text="Gerar Dados", command=self.iniciar_geracao, style="Accent.TButton");
         btn_gerar.pack();
-        Tooltip(btn_gerar, "Inicia a geração dos dados com as configurações acima")
+        Tooltip(btn_gerar, "Inicia a geração dos dados")
 
         try:
             self.tk.call("source", "azure.tcl"); self.tk.call("set_theme", "light")
@@ -200,29 +230,29 @@ class AppGeradorDados(tk.Tk):
         self.after_idle(self._update_scrollregion)
 
     def adicionar_campo(self, config=None):
-        config = config or {}
+        config = config or {};
         frame_id = len(self.frames_campos);
-        campo_frame = ttk.LabelFrame(self.campos_frame, text=f"Campo {frame_id + 1}", padding="10");
+        campo_frame = ttk.LabelFrame(self.campos_frame, text=f"Campo {frame_id + 1}", padding=10);
         campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
         ttk.Label(campo_frame, text="Nome:").grid(row=0, column=0, sticky="w", padx=2);
         nome_var = tk.StringVar(value=config.get('nome', f'campo_{frame_id + 1}'));
         entry_nome = ttk.Entry(campo_frame, textvariable=nome_var, width=20);
         entry_nome.grid(row=0, column=1, sticky="ew", padx=2);
-        Tooltip(entry_nome, "Nome da coluna no arquivo CSV final")
+        Tooltip(entry_nome, "Nome da coluna no CSV")
         ttk.Label(campo_frame, text="Tipo:").grid(row=0, column=2, sticky="w", padx=2);
         tipos = ['integer', 'float', 'string', 'boolean', 'datetime', 'uuid', 'lista_opcoes', 'regex'];
         tipo_var = tk.StringVar(value=config.get('tipo', 'string'));
         combo_tipo = ttk.Combobox(campo_frame, textvariable=tipo_var, values=tipos, state="readonly", width=12);
         combo_tipo.grid(row=0, column=3, sticky="ew", padx=2);
-        Tooltip(combo_tipo, "Tipo de dado a ser gerado para esta coluna")
+        Tooltip(combo_tipo, "Tipo de dado a ser gerado")
         ttk.Label(campo_frame, text="Repetir:").grid(row=0, column=4, sticky="w", padx=2);
         repeticao_var = tk.StringVar(value=str(config.get('repeticao', '0')));
         spin_rep = ttk.Spinbox(campo_frame, from_=0, to=999, textvariable=repeticao_var, width=5);
         spin_rep.grid(row=0, column=5, sticky="w", padx=2);
-        Tooltip(spin_rep, "Nº de vezes que um valor se repete.\n1 = Valor único\n0 = Aleatório")
+        Tooltip(spin_rep, "Nº de repetições (1=Único)")
         btn_remover = ttk.Button(campo_frame, text="Remover", command=lambda: self.remover_campo(frame_id));
         btn_remover.grid(row=0, column=6, padx=15);
-        Tooltip(btn_remover, "Remove esta coluna da configuração")
+        Tooltip(btn_remover, "Remove esta coluna")
         label_limites = ttk.Label(campo_frame, text="Parâmetros:");
         label_limites.grid(row=1, column=0, sticky="w", padx=2, pady=5)
         limite1_var, limite2_var, opcoes_var, regex_var = tk.StringVar(
@@ -238,49 +268,77 @@ class AppGeradorDados(tk.Tk):
             entry_limite2.grid_remove();
             entry_opcoes_regex.grid_remove()
             if tipo in ['integer', 'float', 'string']:
-                label_limites.config(text="Min/Max:"); Tooltip(label_limites,
-                                                               "Valor/Comprimento mínimo e máximo"); entry_limite1.grid(
-                    row=1, column=1, sticky="ew", padx=2); entry_limite2.grid(row=1, column=2, sticky="ew",
-                                                                              columnspan=2, padx=2)
+                label_limites.config(text="Min/Max:");entry_limite1.grid(row=1, column=1, sticky="ew",
+                                                                         padx=2);entry_limite2.grid(row=1, column=2,
+                                                                                                    sticky="ew",
+                                                                                                    columnspan=2,
+                                                                                                    padx=2)
             elif tipo == 'datetime':
-                label_limites.config(text="Data Início/Fim:"); Tooltip(label_limites,
-                                                                       "Data no formato AAAA-MM-DD"); entry_limite1.grid(
-                    row=1, column=1, sticky="ew", padx=2); entry_limite2.grid(row=1, column=2, sticky="ew",
-                                                                              columnspan=2, padx=2)
+                label_limites.config(text="Data Início/Fim:");entry_limite1.grid(row=1, column=1, sticky="ew",
+                                                                                 padx=2);entry_limite2.grid(row=1,
+                                                                                                            column=2,
+                                                                                                            sticky="ew",
+                                                                                                            columnspan=2,
+                                                                                                            padx=2)
             elif tipo == 'lista_opcoes':
-                label_limites.config(text="Opções:"); Tooltip(label_limites,
-                                                              "Valores possíveis, separados por vírgula"); entry_opcoes_regex.config(
-                    textvariable=opcoes_var); entry_opcoes_regex.grid(row=1, column=1, sticky="ew", columnspan=4,
-                                                                      padx=2)
+                label_limites.config(text="Opções:");entry_opcoes_regex.config(
+                    textvariable=opcoes_var);entry_opcoes_regex.grid(row=1, column=1, sticky="ew", columnspan=4, padx=2)
             elif tipo == 'regex':
-                label_limites.config(text="Padrão Regex:"); Tooltip(label_limites,
-                                                                    "Expressão Regular para gerar os dados"); entry_opcoes_regex.config(
-                    textvariable=regex_var); entry_opcoes_regex.grid(row=1, column=1, sticky="ew", columnspan=4, padx=2)
+                label_limites.config(text="Padrão Regex:");entry_opcoes_regex.config(
+                    textvariable=regex_var);entry_opcoes_regex.grid(row=1, column=1, sticky="ew", columnspan=4, padx=2)
             else:
-                label_limites.config(text="Parâmetros:"); Tooltip(label_limites, "Este tipo não requer parâmetros")
+                label_limites.config(text="Parâmetros:")
 
         tipo_var.trace_add("write", _atualizar_parametros);
         _atualizar_parametros()
-        campo_frame.grid_columnconfigure(1, weight=1);
-        campo_frame.grid_columnconfigure(3, weight=1)
         self.frames_campos.append(
             {'frame': campo_frame, 'id': frame_id, 'nome': nome_var, 'tipo': tipo_var, 'repeticao': repeticao_var,
              'limite1': limite1_var, 'limite2': limite2_var, 'opcoes': opcoes_var, 'regex': regex_var})
         self.after_idle(self._update_scrollregion)
 
+    def adicionar_regra_sort(self, config=None):
+        config = config or {};
+        rule_id = len(self.frames_sort);
+        rule_frame = ttk.Frame(self.sort_rules_frame);
+        rule_frame.pack(fill="x", pady=2)
+        nomes_campos = [f['nome'].get() for f in self.frames_campos if f['nome'].get()]
+        ttk.Label(rule_frame, text=f"Ordenar por:").pack(side="left", padx=5);
+        campo_var = tk.StringVar(value=config.get('campo', ''));
+        combo_campo = ttk.Combobox(rule_frame, textvariable=campo_var, values=nomes_campos, state="readonly", width=30);
+        combo_campo.pack(side="left", padx=5);
+        Tooltip(combo_campo, "Escolha a coluna para ordenar")
+        ordem_var = tk.StringVar(value=config.get('ordem', 'Ascendente'));
+        combo_ordem = ttk.Combobox(rule_frame, textvariable=ordem_var, values=["Ascendente", "Descendente"],
+                                   state="readonly", width=15);
+        combo_ordem.pack(side="left", padx=5)
+        btn_remover = ttk.Button(rule_frame, text="Remover", command=lambda: self.remover_regra_sort(rule_id));
+        btn_remover.pack(side="left", padx=5)
+        self.frames_sort.append({'frame': rule_frame, 'id': rule_id, 'campo': campo_var, 'ordem': ordem_var})
+
     def remover_campo(self, frame_id):
         for campo_dict in self.frames_campos:
-            if campo_dict['id'] == frame_id: campo_dict['frame'].destroy(); self.frames_campos.remove(campo_dict); break
+            if campo_dict['id'] == frame_id: campo_dict['frame'].destroy();self.frames_campos.remove(campo_dict);break
         for i, campo_dict in enumerate(self.frames_campos): campo_dict['frame'].config(text=f"Campo {i + 1}");
         campo_dict['id'] = i
         self.after_idle(self._update_scrollregion)
 
+    def remover_regra_sort(self, rule_id):
+        for rule_dict in self.frames_sort:
+            if rule_dict['id'] == rule_id: rule_dict['frame'].destroy();self.frames_sort.remove(rule_dict);break
+        for i, rule_dict in enumerate(self.frames_sort): rule_dict['id'] = i
+
+    # --- FUNÇÕES DE SESSÃO (SALVAR/CARREGAR/COLETAR) CORRIGIDAS E VERIFICADAS ---
+
     def _coletar_configuracoes(self):
+        """Coleta TODAS as configurações da GUI para um dicionário."""
         try:
             config = {"nome_arquivo": self.nome_arquivo_var.get(), "num_linhas": int(self.num_linhas_var.get()),
                       "separador": self.separador_map.get(self.separador_var.get(), self.separador_var.get()),
-                      "codificacao": self.codificacao_var.get(), "campos": []}
-            if not self.frames_campos: messagebox.showwarning("Aviso", "Nenhum campo foi adicionado."); return None
+                      "codificacao": self.codificacao_var.get(), "campos": [], "regras_sort": []}
+            if not self.frames_campos:
+                messagebox.showwarning("Aviso", "Nenhum campo foi adicionado.")
+                return None
+
             for widgets in self.frames_campos:
                 tipo = widgets['tipo'].get()
                 campo_cfg = {"nome": widgets['nome'].get(), "tipo": tipo, "repeticao": int(widgets['repeticao'].get())}
@@ -291,66 +349,71 @@ class AppGeradorDados(tk.Tk):
                 elif tipo == 'regex':
                     campo_cfg['regex_pattern'] = widgets['regex'].get()
                 config["campos"].append(campo_cfg)
+
+            for rule_widgets in self.frames_sort:
+                config["regras_sort"].append(
+                    {'campo': rule_widgets['campo'].get(), 'ordem': rule_widgets['ordem'].get()})
+
             return config
         except ValueError:
-            messagebox.showerror("Erro de Entrada",
-                                 "Verifique se os números (linhas, limites, repetição) são válidos."); return None
+            messagebox.showerror("Erro de Entrada", "Verifique se os números (linhas, limites, repetição) são válidos.")
+            return None
+
+    def salvar_configuracao(self):
+        """Coleta as configurações e salva em um arquivo JSON."""
+        config = self._coletar_configuracoes()
+        if not config: return
+
+        filepath = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")],
+                                                title="Salvar Configuração")
+        if filepath:
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=4)
+                messagebox.showinfo("Sucesso", f"Configuração salva em {filepath}")
+            except Exception as e:
+                messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar o arquivo: {e}")
+
+    def carregar_configuracao(self):
+        """Carrega uma configuração de um arquivo JSON e popula a GUI."""
+        filepath = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")], title="Carregar Configuração")
+        if not filepath: return
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            self.limpar_sessao(confirmar=False)
+
+            self.nome_arquivo_var.set(config.get("nome_arquivo", "dados.csv"))
+            self.num_linhas_var.set(str(config.get("num_linhas", 100)))
+            self.codificacao_var.set(config.get("codificacao", "utf-8"))
+            separador_salvo = config.get("separador", ",")
+            self.separador_var.set({v: k for k, v in self.separador_map.items()}.get(separador_salvo, separador_salvo))
+
+            for campo_config in config.get("campos", []):
+                self.adicionar_campo(campo_config)
+            for sort_config in config.get("regras_sort", []):
+                self.adicionar_regra_sort(sort_config)
+        except Exception as e:
+            messagebox.showerror("Erro ao Carregar", f"Não foi possível ler o arquivo de configuração:\n{e}")
+
+    def limpar_sessao(self, confirmar=True):
+        if confirmar and not messagebox.askyesno("Confirmar", "Deseja limpar todas as configurações?"): return
+        self.nome_arquivo_var.set("massa_de_dados.csv");
+        self.num_linhas_var.set("100");
+        self.separador_var.set("Vírgula (,)");
+        self.codificacao_var.set("utf-8")
+        for campo_dict in list(self.frames_campos): campo_dict['frame'].destroy()
+        self.frames_campos.clear()
+        for sort_dict in list(self.frames_sort): sort_dict['frame'].destroy()
+        self.frames_sort.clear()
+        self.adicionar_campo()
+        self.after_idle(self._update_scrollregion)
 
     def iniciar_geracao(self):
         config = self._coletar_configuracoes()
         if config: gerar_dados_gui(config)
-
-    def salvar_configuracao(self):
-        config = self._coletar_configuracoes()
-        if not config: return
-        filepath = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f: json.dump(config, f, indent=4)
-            messagebox.showinfo("Sucesso", f"Configuração salva em {filepath}")
-
-    def carregar_configuracao(self):
-        filepath = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")])
-        if not filepath: return
-
-        with open(filepath, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-
-        # <<< CORREÇÃO 1: CHAMAR A FUNÇÃO DE LIMPEZA COM O NOVO PARÂMETRO >>>
-        # Dizemos para limpar a sessão, mas SEM adicionar um novo campo em branco.
-        self.limpar_sessao(confirmar=False, adicionar_campo_inicial=False)
-
-        # Carrega as configurações gerais do arquivo
-        self.nome_arquivo_var.set(config.get("nome_arquivo", "dados.csv"))
-        self.num_linhas_var.set(str(config.get("num_linhas", 100)))
-        self.codificacao_var.set(config.get("codificacao", "utf-8"))
-        separador_salvo = config.get("separador", ",")
-        self.separador_var.set({v: k for k, v in self.separador_map.items()}.get(separador_salvo, separador_salvo))
-
-        # Agora, carrega apenas os campos que vieram do arquivo
-        for campo_config in config.get("campos", []):
-            self.adicionar_campo(campo_config)
-
-    # <<< CORREÇÃO 2: ATUALIZAR A ASSINATURA DA FUNÇÃO DE LIMPEZA >>>
-    def limpar_sessao(self, confirmar=True, adicionar_campo_inicial=True):
-        if confirmar and not messagebox.askyesno("Confirmar", "Deseja limpar todas as configurações?"): return
-
-        # Limpa as configurações gerais
-        self.nome_arquivo_var.set("massa_de_dados.csv")
-        self.num_linhas_var.set("100")
-        self.separador_var.set("Vírgula (,)")
-        self.codificacao_var.set("utf-8")
-
-        # Limpa os frames de campo da interface
-        for campo_dict in list(self.frames_campos):
-            campo_dict['frame'].destroy()
-        self.frames_campos.clear()
-
-        # <<< CORREÇÃO 3: LÓGICA CONDICIONAL PARA ADICIONAR O CAMPO >>>
-        # Só adiciona o campo em branco se a função não foi instruída a evitar isso.
-        if adicionar_campo_inicial:
-            self.adicionar_campo()
-
-        self.after_idle(self._update_scrollregion)
 
 
 if __name__ == "__main__":
