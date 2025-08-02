@@ -16,7 +16,6 @@ except ImportError:
 
 
 # --- CLASSES AUXILIARES E LÓGICA DE GERAÇÃO (SEM ALTERAÇÕES) ---
-
 class Tooltip:
     def __init__(self, widget, text):
         self.widget, self.text, self.tooltip_window = widget, text, None
@@ -79,46 +78,54 @@ def _criar_valor_atomico(campo):
     return None
 
 
+# --- LÓGICA DE GERAÇÃO OTIMIZADA ---
 def gerar_dados_gui(configuracoes):
+    """Função principal de geração, agora com modo inteligente de memória."""
     nome_arquivo, num_linhas, campos_cfg, separador, codificacao, regras_sort = \
-        configuracoes.get('nome_arquivo', 'massa_de_dados.csv'), configuracoes.get('num_linhas', 100), \
-            configuracoes.get('campos', []), configuracoes.get('separador', ','), \
-            configuracoes.get('codificacao', 'utf-8'), configuracoes.get('regras_sort', [])
+        configuracoes.get('nome_arquivo'), configuracoes.get('num_linhas'), \
+            configuracoes.get('campos'), configuracoes.get('separador'), \
+            configuracoes.get('codificacao'), configuracoes.get('regras_sort')
 
     if not nome_arquivo.lower().endswith('.csv'): nome_arquivo += '.csv'
 
     try:
-        if num_linhas > 500000 and regras_sort:
-            if not messagebox.askyesno("Aviso de Desempenho",
-                                       f"Você está gerando {num_linhas} linhas com ordenação.\nIsso pode consumir bastante memória RAM.\n\nDeseja continuar?"):
-                return
+        # Validações prévias
         for campo in campos_cfg:
             if campo.get('repeticao') == 1:
-                if campo['tipo'] == 'integer':
-                    min_v, max_v = int(campo['limite'][0]), int(campo['limite'][1])
-                    if (max_v - min_v + 1) < num_linhas: raise ValueError(
-                        f"Campo '{campo['nome']}': Intervalo ({max_v - min_v + 1}) menor que n° de linhas ({num_linhas}).")
+                if campo['tipo'] == 'integer' and (int(campo['limite'][1]) - int(campo['limite'][0]) + 1) < num_linhas:
+                    raise ValueError(
+                        f"Campo '{campo['nome']}': Intervalo insuficiente para gerar {num_linhas} valores únicos.")
                 elif campo['tipo'] == 'lista_opcoes' and len(campo['opcoes']) < num_linhas:
                     raise ValueError(
-                        f"Campo '{campo['nome']}': N° de opções ({len(campo['opcoes'])}) menor que n° de linhas ({num_linhas}).")
+                        f"Campo '{campo['nome']}': Nº de opções insuficiente para gerar {num_linhas} valores únicos.")
 
         cabecalho = [c['nome'] for c in campos_cfg]
         geradores = [_criar_gerador_de_campo(c, num_linhas) for c in campos_cfg]
-        dados_em_memoria = [[next(g) for g in geradores] for _ in range(num_linhas)]
 
+        # <<< OTIMIZAÇÃO DE MEMÓRIA: ESCOLHA DO MÉTODO DE GERAÇÃO >>>
         if regras_sort:
+            # --- MODO COM ORDENAÇÃO (Usa mais RAM) ---
+            dados_em_memoria = [[next(g) for g in geradores] for _ in range(num_linhas)]
+
             indices_sort = {nome: i for i, nome in enumerate(cabecalho)}
             for regra in reversed(regras_sort):
                 nome_campo, ordem_desc = regra['campo'], regra['ordem'] == 'Descendente'
                 if nome_campo in indices_sort:
                     dados_em_memoria.sort(key=lambda row: row[indices_sort[nome_campo]], reverse=ordem_desc)
 
-        with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
-            writer = csv.writer(file, delimiter=separador)
-            writer.writerow(cabecalho)
-            writer.writerows(dados_em_memoria)
+            with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
+                writer = csv.writer(file, delimiter=separador)
+                writer.writerow(cabecalho)
+                writer.writerows(dados_em_memoria)
+        else:
+            # --- MODO SEM ORDENAÇÃO (Eficiente em memória) ---
+            with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
+                writer = csv.writer(file, delimiter=separador)
+                writer.writerow(cabecalho)
+                for _ in range(num_linhas):
+                    writer.writerow([next(g) for g in geradores])
 
-        messagebox.showinfo("Sucesso", f"Arquivo '{nome_arquivo}' gerado e ordenado com sucesso!")
+        messagebox.showinfo("Sucesso", f"Arquivo '{nome_arquivo}' gerado com sucesso!")
 
     except (ValueError, TypeError) as e:
         messagebox.showerror("Erro de Geração ou Configuração", str(e))
@@ -126,17 +133,14 @@ def gerar_dados_gui(configuracoes):
         messagebox.showerror("Erro Inesperado", f"Ocorreu um erro: {e}")
 
 
-# --- INTERFACE GRÁFICA CORRIGIDA E ESTABILIZADA ---
-
 class AppGeradorDados(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gerador de Massa de Dados v2.6 (Estável)")
+        self.title("Gerador de Massa de Dados v2.7 (Estável)")
         self.geometry("950x800")
 
         self.separador_map = {"Vírgula (,)": ",", "Ponto e Vírgula (;)": ";", "Tab (    )": "\t", "Pipe (|)": "|"}
-        self.frames_campos = []
-        self.frames_sort = []
+        self.frames_campos, self.frames_sort = [], []
         self._criar_widgets()
 
     def _update_scrollregion(self):
@@ -193,14 +197,14 @@ class AppGeradorDados(tk.Tk):
         btn_add_campo.pack(side="top", anchor="w", pady=5);
         Tooltip(btn_add_campo, "Adiciona uma nova coluna")
 
+        # <<< CORREÇÃO DE PERFORMANCE/UI: ESTRUTURA CORRETA DO CANVAS >>>
         canvas_frame = ttk.Frame(campos_container);
         canvas_frame.pack(fill="both", expand=True)
         self.canvas = tk.Canvas(canvas_frame, borderwidth=0, highlightthickness=0)
         self.campos_frame = ttk.Frame(self.canvas)
         self.scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.scrollbar.pack(side="right", fill="y")
+        self.scrollbar.pack(side="right", fill="y");
         self.canvas.pack(side="left", fill="both", expand=True)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.campos_frame, anchor="nw")
         self.canvas.bind('<Configure>', self.on_canvas_configure)
@@ -210,6 +214,12 @@ class AppGeradorDados(tk.Tk):
         btn_add_sort = ttk.Button(sort_frame, text="Adicionar Regra de Ordenação", command=self.adicionar_regra_sort);
         btn_add_sort.pack(side="top", anchor="w");
         Tooltip(btn_add_sort, "Adiciona um critério de ordenação")
+        # <<< OTIMIZAÇÃO DE MEMÓRIA: AVISO VISUAL >>>
+        self.sort_warning_label = ttk.Label(sort_frame,
+                                            text="Aviso: Ordenação ativa consome mais memória RAM para arquivos grandes.",
+                                            foreground="orange")
+        Tooltip(self.sort_warning_label,
+                "O script irá gerar todos os dados em memória antes de salvar para poder ordená-los.")
         self.sort_rules_frame = ttk.Frame(sort_frame);
         self.sort_rules_frame.pack(side="top", fill="x", expand=True, pady=5)
 
@@ -314,6 +324,7 @@ class AppGeradorDados(tk.Tk):
         btn_remover = ttk.Button(rule_frame, text="Remover", command=lambda: self.remover_regra_sort(rule_id));
         btn_remover.pack(side="left", padx=5)
         self.frames_sort.append({'frame': rule_frame, 'id': rule_id, 'campo': campo_var, 'ordem': ordem_var})
+        self.sort_warning_label.pack(side="top", anchor="w", pady=(5, 0))  # Mostra o aviso
 
     def remover_campo(self, frame_id):
         for campo_dict in self.frames_campos:
@@ -326,21 +337,16 @@ class AppGeradorDados(tk.Tk):
         for rule_dict in self.frames_sort:
             if rule_dict['id'] == rule_id: rule_dict['frame'].destroy();self.frames_sort.remove(rule_dict);break
         for i, rule_dict in enumerate(self.frames_sort): rule_dict['id'] = i
-
-    # --- FUNÇÕES DE SESSÃO (SALVAR/CARREGAR/COLETAR) CORRIGIDAS E VERIFICADAS ---
+        if not self.frames_sort: self.sort_warning_label.pack_forget()  # Esconde o aviso se não houver regras
 
     def _coletar_configuracoes(self):
-        """Coleta TODAS as configurações da GUI para um dicionário."""
         try:
             config = {"nome_arquivo": self.nome_arquivo_var.get(), "num_linhas": int(self.num_linhas_var.get()),
                       "separador": self.separador_map.get(self.separador_var.get(), self.separador_var.get()),
                       "codificacao": self.codificacao_var.get(), "campos": [], "regras_sort": []}
-            if not self.frames_campos:
-                messagebox.showwarning("Aviso", "Nenhum campo foi adicionado.")
-                return None
-
+            if not self.frames_campos: messagebox.showwarning("Aviso", "Nenhum campo foi adicionado.");return None
             for widgets in self.frames_campos:
-                tipo = widgets['tipo'].get()
+                tipo = widgets['tipo'].get();
                 campo_cfg = {"nome": widgets['nome'].get(), "tipo": tipo, "repeticao": int(widgets['repeticao'].get())}
                 if tipo in ['integer', 'float', 'string', 'datetime']:
                     campo_cfg['limite'] = (widgets['limite1'].get(), widgets['limite2'].get())
@@ -349,54 +355,28 @@ class AppGeradorDados(tk.Tk):
                 elif tipo == 'regex':
                     campo_cfg['regex_pattern'] = widgets['regex'].get()
                 config["campos"].append(campo_cfg)
-
-            for rule_widgets in self.frames_sort:
-                config["regras_sort"].append(
-                    {'campo': rule_widgets['campo'].get(), 'ordem': rule_widgets['ordem'].get()})
-
+            for rule_widgets in self.frames_sort: config["regras_sort"].append(
+                {'campo': rule_widgets['campo'].get(), 'ordem': rule_widgets['ordem'].get()})
             return config
         except ValueError:
-            messagebox.showerror("Erro de Entrada", "Verifique se os números (linhas, limites, repetição) são válidos.")
-            return None
-
-    def salvar_configuracao(self):
-        """Coleta as configurações e salva em um arquivo JSON."""
-        config = self._coletar_configuracoes()
-        if not config: return
-
-        filepath = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")],
-                                                title="Salvar Configuração")
-        if filepath:
-            try:
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=4)
-                messagebox.showinfo("Sucesso", f"Configuração salva em {filepath}")
-            except Exception as e:
-                messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar o arquivo: {e}")
+            messagebox.showerror("Erro de Entrada", "Verifique se os números são válidos.");return None
 
     def carregar_configuracao(self):
-        """Carrega uma configuração de um arquivo JSON e popula a GUI."""
         filepath = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")], title="Carregar Configuração")
         if not filepath: return
-
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-
             self.limpar_sessao(confirmar=False)
-
-            self.nome_arquivo_var.set(config.get("nome_arquivo", "dados.csv"))
-            self.num_linhas_var.set(str(config.get("num_linhas", 100)))
+            self.nome_arquivo_var.set(config.get("nome_arquivo", "dados.csv"));
+            self.num_linhas_var.set(str(config.get("num_linhas", 100)));
             self.codificacao_var.set(config.get("codificacao", "utf-8"))
-            separador_salvo = config.get("separador", ",")
+            separador_salvo = config.get("separador", ",");
             self.separador_var.set({v: k for k, v in self.separador_map.items()}.get(separador_salvo, separador_salvo))
-
-            for campo_config in config.get("campos", []):
-                self.adicionar_campo(campo_config)
-            for sort_config in config.get("regras_sort", []):
-                self.adicionar_regra_sort(sort_config)
+            for campo_config in config.get("campos", []): self.adicionar_campo(campo_config)
+            for sort_config in config.get("regras_sort", []): self.adicionar_regra_sort(sort_config)
         except Exception as e:
-            messagebox.showerror("Erro ao Carregar", f"Não foi possível ler o arquivo de configuração:\n{e}")
+            messagebox.showerror("Erro ao Carregar", f"Não foi possível ler o arquivo:\n{e}")
 
     def limpar_sessao(self, confirmar=True):
         if confirmar and not messagebox.askyesno("Confirmar", "Deseja limpar todas as configurações?"): return
@@ -408,8 +388,21 @@ class AppGeradorDados(tk.Tk):
         self.frames_campos.clear()
         for sort_dict in list(self.frames_sort): sort_dict['frame'].destroy()
         self.frames_sort.clear()
+        self.sort_warning_label.pack_forget()  # Esconde o aviso
         self.adicionar_campo()
-        self.after_idle(self._update_scrollregion)
+
+    def salvar_configuracao(self):
+        config = self._coletar_configuracoes()
+        if not config: return
+        filepath = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")],
+                                                title="Salvar Configuração")
+        if filepath:
+            try:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=4)
+                messagebox.showinfo("Sucesso", f"Configuração salva em {filepath}")
+            except Exception as e:
+                messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar o arquivo: {e}")
 
     def iniciar_geracao(self):
         config = self._coletar_configuracoes()
