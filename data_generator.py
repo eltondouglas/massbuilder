@@ -1,15 +1,13 @@
 # data_generator.py
-# Camada de Lógica: responsável por toda a geração de dados.
-# Este módulo não depende e não sabe nada sobre a interface gráfica (tkinter).
+# Camada de Lógica: agora com uma função 'worker' para ser executada em uma thread separada.
 
 import csv
 import random
 import string
 import datetime
 import uuid
-from utils import LISTA_NOMES, LISTA_SOBRENOMES  # Importa as listas do nosso módulo de utilitários
+from utils import LISTA_NOMES, LISTA_SOBRENOMES
 
-# Tenta importar exrex. Se falhar, levanta um erro que será pego pela GUI.
 try:
     import exrex
 except ImportError:
@@ -19,13 +17,11 @@ except ImportError:
 def _criar_valor_atomico(campo):
     """Gera um único valor com base no tipo e limites."""
     tipo = campo.get('tipo', 'string')
-
     if tipo == 'nome_pessoa':
         nome = random.choice(LISTA_NOMES)
         num_sobrenomes = random.randint(1, 2)
         sobrenomes_escolhidos = random.sample(LISTA_SOBRENOMES, num_sobrenomes)
         return f"{nome} {' '.join(sobrenomes_escolhidos)}"
-
     try:
         if tipo == 'integer': return random.randint(int(campo['limite'][0]), int(campo['limite'][1]))
         if tipo == 'float': return round(random.uniform(float(campo['limite'][0]), float(campo['limite'][1])), 2)
@@ -44,7 +40,6 @@ def _criar_valor_atomico(campo):
         raise ValueError(f"Parâmetro inválido para o campo '{campo['nome']}' do tipo '{tipo}': {e}")
     except Exception as e:
         raise ValueError(f"Erro ao gerar valor para o campo '{campo['nome']}': {e}")
-
     return None
 
 
@@ -53,11 +48,9 @@ def _criar_gerador_de_campo(campo_config, total_linhas):
     tipo, repetir_valor, valores_usados = campo_config.get('tipo', 'string'), campo_config.get('repeticao', 0), set()
 
     def _gerar_novo_valor():
-        for _ in range(total_linhas * 5):  # Limite de tentativas para evitar loops infinitos
+        for _ in range(total_linhas * 5):
             valor = _criar_valor_atomico(campo_config)
-            if repetir_valor != 1 or valor not in valores_usados:
-                valores_usados.add(valor)
-                return valor
+            if repetir_valor != 1 or valor not in valores_usados: valores_usados.add(valor); return valor
         raise ValueError(
             f"Não foi possível gerar valor único para '{campo_config['nome']}'. Verifique se o intervalo/opções são suficientes.")
 
@@ -70,7 +63,7 @@ def _criar_gerador_de_campo(campo_config, total_linhas):
 
 
 def generate_from_config(configuracoes):
-    """Função principal que orquestra a geração de dados a partir de um dicionário de configuração."""
+    """Função que executa a geração. Agora levanta exceções em vez de mostrar pop-ups."""
     nome_arquivo, num_linhas, campos_cfg, separador, codificacao, regras_sort = \
         configuracoes.get('nome_arquivo'), configuracoes.get('num_linhas'), \
             configuracoes.get('campos'), configuracoes.get('separador'), \
@@ -78,7 +71,6 @@ def generate_from_config(configuracoes):
 
     if not nome_arquivo.lower().endswith('.csv'): nome_arquivo += '.csv'
 
-    # Validações prévias
     for campo in campos_cfg:
         if campo.get('repeticao') == 1:
             if campo['tipo'] == 'integer' and (int(campo['limite'][1]) - int(campo['limite'][0]) + 1) < num_linhas:
@@ -91,25 +83,32 @@ def generate_from_config(configuracoes):
     cabecalho = [c['nome'] for c in campos_cfg]
     geradores = [_criar_gerador_de_campo(c, num_linhas) for c in campos_cfg]
 
-    # Modo inteligente de geração baseado na necessidade de ordenação
     if regras_sort:
-        # Modo com ordenação (Usa mais RAM)
         dados_em_memoria = [[next(g) for g in geradores] for _ in range(num_linhas)]
-
         indices_sort = {nome: i for i, nome in enumerate(cabecalho)}
         for regra in reversed(regras_sort):
             nome_campo, ordem_desc = regra['campo'], regra['ordem'] == 'Descendente'
             if nome_campo in indices_sort:
                 dados_em_memoria.sort(key=lambda row: row[indices_sort[nome_campo]], reverse=ordem_desc)
-
         with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
-            writer = csv.writer(file, delimiter=separador)
-            writer.writerow(cabecalho)
+            writer = csv.writer(file, delimiter=separador);
+            writer.writerow(cabecalho);
             writer.writerows(dados_em_memoria)
     else:
-        # Modo sem ordenação (Eficiente em memória)
         with open(nome_arquivo, 'w', newline='', encoding=codificacao) as file:
-            writer = csv.writer(file, delimiter=separador)
+            writer = csv.writer(file, delimiter=separador);
             writer.writerow(cabecalho)
-            for _ in range(num_linhas):
-                writer.writerow([next(g) for g in geradores])
+            for _ in range(num_linhas): writer.writerow([next(g) for g in geradores])
+
+
+# <<< NOVO: FUNÇÃO 'WORKER' PARA A THREAD >>>
+def run_generation_in_thread(config, result_queue):
+    """
+    Esta função 'worker' é executada na thread de trabalho.
+    Ela chama a função de geração e coloca o resultado (sucesso ou erro) na fila.
+    """
+    try:
+        generate_from_config(config)
+        result_queue.put({'status': 'success', 'message': f"Arquivo '{config['nome_arquivo']}' gerado com sucesso!"})
+    except Exception as e:
+        result_queue.put({'status': 'error', 'message': str(e)})

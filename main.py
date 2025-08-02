@@ -13,4 +13,5 @@ if __name__ == "__main__":
         from tkinter import messagebox
         root = tk.Tk()
         root.withdraw()
+        print(e)
         messagebox.showerror("Erro Fatal", f"Ocorreu um erro crítico ao iniciar a aplicação:\n{e}")
