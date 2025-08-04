@@ -75,11 +75,14 @@ class FileTab(ttk.Frame):
         Tooltip(self.constraint_listbox, "Use Ctrl+Click ou Shift+Click para selecionar múltiplos campos.")
 
     def adicionar_campo(self, config=None):
+        # Desativar atualizações de UI durante a criação do campo
+        self.canvas.config(state="disabled")
+        
         config = config or {}
         frame_id = len(self.frames_campos)
         campo_frame = ttk.LabelFrame(self.campos_frame, text=f"Campo {frame_id + 1}", padding=10)
-        campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
-
+        
+        # Criar todas as variáveis antes de adicionar widgets à UI
         nome_var = tk.StringVar(value=config.get('nome', f'campo_{frame_id + 1}'))
         tipos = ['integer', 'float', 'string', 'nome_pessoa', 'boolean', 'datetime', 'uuid', 'lista_opcoes', 'regex',
                  'chave_estrangeira']
@@ -190,17 +193,45 @@ class FileTab(ttk.Frame):
             'fk_campo': fk_campo_var, 'fk_cardinalidade': fk_cardinalidade_var,
             'btn_subir': btn_subir, 'btn_descer': btn_descer, 'btn_remover': btn_remover
         })
+        
+        # Agora que todos os widgets foram criados, podemos adicionar o frame ao layout
+        campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
+        
+        # Reativar atualizações de UI
+        self.canvas.config(state="normal")
+        
         self._atualizar_lista_unicidade()
-        self.app_controller.after_idle(lambda: self.app_controller._update_scrollregion(self.canvas))
+        # Usar after(10) em vez de after_idle para melhor desempenho
+        self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def _atualizar_lista_unicidade(self):
+        # Otimização: Verificar se realmente precisamos atualizar
+        novos_nomes = [campo_dict['nome'].get() for campo_dict in self.frames_campos]
+        nomes_atuais = [self.constraint_listbox.get(i) for i in range(self.constraint_listbox.size())]
+        
+        # Se os nomes não mudaram, não precisamos atualizar a lista
+        if novos_nomes == nomes_atuais:
+            return
+            
+        # Suspender atualizações da UI
+        self.constraint_listbox.config(state="disabled")
+        
+        # Salvar seleção atual
         selecao_previa = self.constraint_listbox.curselection()
         nomes_selecionados = {self.constraint_listbox.get(i) for i in selecao_previa}
+        
+        # Atualizar lista
         self.constraint_listbox.delete(0, tk.END)
-        novos_nomes = [campo_dict['nome'].get() for campo_dict in self.frames_campos]
-        for nome in novos_nomes: self.constraint_listbox.insert(tk.END, nome)
+        for nome in novos_nomes:
+            self.constraint_listbox.insert(tk.END, nome)
+            
+        # Restaurar seleção
         for i, nome in enumerate(novos_nomes):
-            if nome in nomes_selecionados: self.constraint_listbox.selection_set(i)
+            if nome in nomes_selecionados:
+                self.constraint_listbox.selection_set(i)
+                
+        # Reativar a UI
+        self.constraint_listbox.config(state="normal")
 
     def _atualizar_comandos_e_titulos(self):
         self._atualizar_nomes_campos_ordenacao()
@@ -213,21 +244,48 @@ class FileTab(ttk.Frame):
             campo_dict['btn_remover'].config(command=lambda index=i: self.remover_campo(index))
 
     def _redesenhar_layout_campos(self):
+        # Otimização: Suspender atualizações da UI durante o redesenho
+        self.canvas.config(state="disabled")
         for campo_dict in self.frames_campos: campo_dict['frame'].pack_forget()
         for campo_dict in self.frames_campos: campo_dict['frame'].pack(fill="x", expand=True, padx=5, pady=5)
-        self.app_controller.after_idle(lambda: self.app_controller._update_scrollregion(self.canvas))
+        self.canvas.config(state="normal")
+        # Usar after(10) em vez de after_idle para melhor desempenho
+        self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def remover_campo(self, index):
         if 0 <= index < len(self.frames_campos):
+            # Desativar atualizações de UI durante a remoção
+            self.canvas.config(state="disabled")
+            
+            # Remover o campo
             self.frames_campos.pop(index)['frame'].destroy()
+            
+            # Atualizar comandos e títulos
             self._atualizar_comandos_e_titulos()
+            
+            # Reativar atualizações de UI
+            self.canvas.config(state="normal")
+            
+            # Atualizar a região de rolagem após a remoção
+            self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def _mover_campo(self, index, direcao):
-        if (direcao == -1 and index == 0) or (direcao == 1 and index == len(self.frames_campos) - 1): return
+        # Verificar se o movimento é válido
+        if (direcao == -1 and index == 0) or (direcao == 1 and index == len(self.frames_campos) - 1): 
+            return
+            
+        # Desativar atualizações de UI durante a movimentação
+        self.canvas.config(state="disabled")
+        
+        # Trocar os campos de posição
         nova_posicao = index + direcao
         self.frames_campos[index], self.frames_campos[nova_posicao] = self.frames_campos[nova_posicao], \
             self.frames_campos[index]
+            
+        # Atualizar comandos e títulos
         self._atualizar_comandos_e_titulos()
+        
+        # Redesenhar o layout (o método _redesenhar_layout_campos já reativa a UI)
         self._redesenhar_layout_campos()
 
     def _atualizar_nomes_campos_ordenacao(self):

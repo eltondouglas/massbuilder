@@ -79,8 +79,19 @@ class AppGeradorDados(tk.Tk):
         return resultado
 
     def _update_scrollregion(self, canvas):
-        canvas.update_idletasks()
-        canvas.configure(scrollregion=canvas.bbox("all"))
+        # Otimização: Atualizar a região de rolagem de forma mais eficiente
+        # Evita chamadas desnecessárias a update_idletasks() que podem causar redraws excessivos
+        if not hasattr(canvas, '_update_pending'):
+            canvas._update_pending = True
+            
+            def _do_update():
+                if hasattr(canvas, '_update_pending'):
+                    canvas.update_idletasks()
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                    delattr(canvas, '_update_pending')
+            
+            # Agrupar atualizações com um pequeno atraso para evitar múltiplas chamadas
+            self.after(5, _do_update)
 
     def _coletar_configuracoes(self):
         try:
@@ -92,22 +103,52 @@ class AppGeradorDados(tk.Tk):
     def iniciar_geracao(self):
         config = self._coletar_configuracoes()
         if not config: return
+        
+        # Desabilitar todos os controles durante a geração para evitar interações do usuário
         self.btn_gerar.config(state="disabled", text="Gerando...")
+        
+        # Mostrar um indicador de progresso
+        progress_frame = ttk.Frame(self)
+        progress_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        ttk.Label(progress_frame, text="Gerando dados...", font=("Helvetica", 12)).pack(pady=5)
+        progress = ttk.Progressbar(progress_frame, mode="indeterminate", length=300)
+        progress.pack(pady=10)
+        progress.start(10)  # Iniciar animação
+        
+        # Atualizar a UI antes de iniciar o processamento pesado
         self.update_idletasks()
+        
+        # Armazenar referência ao frame de progresso para removê-lo depois
+        self.progress_frame = progress_frame
+        
+        # Iniciar thread de processamento
         thread = threading.Thread(target=run_generation_in_thread, args=(config, self.result_queue), daemon=True)
         thread.start()
-        self.after(100, self.verificar_thread)
+        
+        # Verificar o resultado com menos frequência para reduzir sobrecarga de UI
+        self.after(200, self.verificar_thread)
 
     def verificar_thread(self):
         try:
             result = self.result_queue.get_nowait()
+            
+            # Remover indicador de progresso
+            if hasattr(self, 'progress_frame'):
+                self.progress_frame.destroy()
+                delattr(self, 'progress_frame')
+            
+            # Restaurar estado do botão
             self.btn_gerar.config(state="normal", text="Gerar Todos os Arquivos")
+            
+            # Mostrar resultado
             if result['status'] == 'success':
                 messagebox.showinfo("Sucesso", result['message'])
             else:
                 messagebox.showerror("Erro na Geração", result['message'])
         except queue.Empty:
-            self.after(100, self.verificar_thread)
+            # Verificar novamente após um intervalo maior para reduzir a carga na UI
+            self.after(200, self.verificar_thread)
 
     def salvar_sessao(self):
         config = self._coletar_configuracoes()
