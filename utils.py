@@ -3,7 +3,6 @@
 
 import tkinter as tk
 
-# --- LISTAS DE NOMES BRASILEIROS ---
 LISTA_NOMES = [
     'Miguel', 'Arthur', 'Gael', 'Heitor', 'Theo', 'Davi', 'Gabriel', 'Bernardo', 'Samuel', 'João',
     'Helena', 'Alice', 'Laura', 'Maria Alice', 'Sophia', 'Manuela', 'Maitê', 'Liz', 'Cecília', 'Isabella',
@@ -17,7 +16,6 @@ LISTA_SOBRENOMES = [
 ]
 
 
-# --- CLASSE HELPER PARA TOOLTIPS ---
 class Tooltip:
     """Cria um tooltip (dica de ajuda) para um widget tkinter."""
 
@@ -62,7 +60,7 @@ class Tooltip:
         label = tk.Label(
             self.tooltip_window, text=self.text, justify='left',
             background="#ffffe0", relief='solid', borderwidth=1,
-            font=("tahoma", "8", "normal")
+            font=["tahoma", "8", "normal"]
         )
         label.pack(ipadx=1)
 

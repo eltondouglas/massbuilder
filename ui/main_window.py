@@ -14,7 +14,7 @@ from data_generator import run_generation_in_thread
 class AppGeradorDados(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Gerador de Dados v5.0 (Arquitetura Modular)")
+        self.title("MassBuilder v0.5.1")
         self.geometry("1024x768")
         icon = tk.PhotoImage(file="images/massbuilder.png")
         self.iconphoto(False, icon)

@@ -1,9 +1,160 @@
 # ui/file_tab.py
-# Módulo que define a classe FileTab, o componente responsável por uma única aba da interface.
+# Módulo que define a classe FileTab e a janela de diálogo para regras condicionais.
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from utils import Tooltip
+
+
+class ConditionalRuleDialog(tk.Toplevel):
+    """Janela de diálogo para criar e editar uma regra de geração condicional."""
+
+    def __init__(self, parent, todos_os_campos, campo_atual, regra_existente=None):
+        super().__init__(parent)
+        self.title(f"Regra Condicional para '{campo_atual}'")
+        self.transient(parent)
+        self.grab_set()
+        self.geometry("600x400")
+
+        self.todos_os_campos = [c for c in todos_os_campos if c != campo_atual]
+        self.regra = regra_existente or {}
+        self.resultado = None  # Armazena a regra criada ao salvar
+
+        self._criar_widgets()
+        self._carregar_regra()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _criar_widgets(self):
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill="both", expand=True)
+
+        # --- SE (Condição) ---
+        if_frame = ttk.LabelFrame(main_frame, text="SE (Condição)", padding="10")
+        if_frame.pack(fill="x", expand=True, pady=5)
+
+        ttk.Label(if_frame, text="O campo:").grid(row=0, column=0, sticky="w", padx=5)
+        self.campo_ref_var = tk.StringVar()
+        self.combo_campo_ref = ttk.Combobox(if_frame, textvariable=self.campo_ref_var, values=self.todos_os_campos,
+                                            state="readonly")
+        self.combo_campo_ref.grid(row=0, column=1, sticky="ew", padx=5)
+
+        operadores = ['é igual a', 'é diferente de', 'contém', 'não contém', '>', '<', '>=', '<=']
+        self.operador_var = tk.StringVar()
+        ttk.Combobox(if_frame, textvariable=self.operador_var, values=operadores, state="readonly", width=15).grid(
+            row=0, column=2, padx=5)
+
+        self.valor_ref_var = tk.StringVar()
+        ttk.Entry(if_frame, textvariable=self.valor_ref_var).grid(row=0, column=3, sticky="ew", padx=5)
+        if_frame.grid_columnconfigure(1, weight=1)
+        if_frame.grid_columnconfigure(3, weight=1)
+
+        # --- ENTÃO (Ação se Verdadeiro) ---
+        then_frame = ttk.LabelFrame(main_frame, text="ENTÃO (Ação se Verdadeiro)", padding="10")
+        then_frame.pack(fill="x", expand=True, pady=5)
+        self.then_action_frame = self._criar_painel_de_acao(then_frame, default_type="Valor Fixo")
+
+        # --- SENÃO (Ação se Falso) ---
+        else_frame = ttk.LabelFrame(main_frame, text="SENÃO (Ação se Falso)", padding="10")
+        else_frame.pack(fill="x", expand=True, pady=5)
+        self.else_action_frame = self._criar_painel_de_acao(else_frame, default_type="Usar Geração Padrão")
+
+        # --- Botões ---
+        button_frame = ttk.Frame(main_frame, padding=(0, 10, 0, 0))
+        button_frame.pack(fill="x", expand=True)
+        ttk.Button(button_frame, text="Cancelar", command=self._on_cancel).pack(side="right", padx=5)
+        ttk.Button(button_frame, text="Salvar Regra", command=self.salvar, style="Accent.TButton").pack(side="right")
+
+    def _criar_painel_de_acao(self, parent, default_type="Nulo/Vazio"):
+        """Cria um painel reutilizável para definir uma ação de geração."""
+        frame = ttk.Frame(parent)
+        frame.pack(fill="x", expand=True)
+
+        tipos_acao = ["Usar Geração Padrão", "Valor Fixo", "Nulo/Vazio", "integer", "float", "string", "regex",
+                      "lista_opcoes"]
+        tipo_var = tk.StringVar(value=default_type)
+        valor1_var = tk.StringVar()
+        valor2_var = tk.StringVar()
+
+        ttk.Label(frame, text="Gerar com tipo:").grid(row=0, column=0, sticky="w")
+        combo_tipo = ttk.Combobox(frame, textvariable=tipo_var, values=tipos_acao, state="readonly")
+        combo_tipo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=5)
+
+        label_params = ttk.Label(frame, text="Parâmetros:")
+        entry1 = ttk.Entry(frame, textvariable=valor1_var)
+        entry2 = ttk.Entry(frame, textvariable=valor2_var)
+
+        def _atualizar_params_acao(*args):
+            for w in [label_params, entry1, entry2]: w.grid_forget()
+            tipo = tipo_var.get()
+            if tipo == "Valor Fixo":
+                label_params.config(text="Valor:")
+                label_params.grid(row=1, column=0, sticky="w", pady=(5, 0))
+                entry1.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(5, 0))
+            elif tipo in ["integer", "float", "string", "datetime"]:
+                label_params.config(text="Min/Max:")
+                label_params.grid(row=1, column=0, sticky="w", pady=(5, 0))
+                entry1.grid(row=1, column=1, sticky="ew", pady=(5, 0))
+                entry2.grid(row=1, column=2, sticky="ew", pady=(5, 0))
+            elif tipo in ["regex", "lista_opcoes"]:
+                label_params.config(text="Padrão/Opções:")
+                label_params.grid(row=1, column=0, sticky="w", pady=(5, 0))
+                entry1.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(5, 0))
+
+        tipo_var.trace_add("write", _atualizar_params_acao)
+        frame.grid_columnconfigure(1, weight=1)
+        _atualizar_params_acao()
+
+        return {'frame': frame, 'tipo_var': tipo_var, 'valor1_var': valor1_var, 'valor2_var': valor2_var}
+
+    def _coletar_acao(self, painel):
+        """Coleta a configuração de um painel de ação."""
+        tipo = painel['tipo_var'].get()
+        acao = {'tipo': tipo}
+        if tipo == 'Valor Fixo': acao['valor_fixo'] = painel['valor1_var'].get()
+        if tipo in ['integer', 'float', 'string', 'datetime']: acao['limite'] = (painel['valor1_var'].get(),
+                                                                                 painel['valor2_var'].get())
+        if tipo == 'regex': acao['regex_pattern'] = painel['valor1_var'].get()
+        if tipo == 'lista_opcoes': acao['opcoes'] = [opt.strip() for opt in painel['valor1_var'].get().split(',') if
+                                                     opt.strip()]
+        return acao
+
+    def _carregar_acao(self, painel, config_acao):
+        """Carrega uma configuração em um painel de ação."""
+        if not config_acao: return
+        painel['tipo_var'].set(config_acao.get('tipo', ''))
+        if 'valor_fixo' in config_acao: painel['valor1_var'].set(config_acao['valor_fixo'])
+        if 'limite' in config_acao: painel['valor1_var'].set(config_acao['limite'][0])
+        painel['valor2_var'].set(
+            config_acao['limite'][1])
+        if 'regex_pattern' in config_acao: painel['valor1_var'].set(config_acao['regex_pattern'])
+        if 'opcoes' in config_acao: painel['valor1_var'].set(", ".join(config_acao['opcoes']))
+
+    def _carregar_regra(self):
+        """Carrega uma regra existente na UI do diálogo."""
+        self.campo_ref_var.set(self.regra.get('campo_ref', ''))
+        self.operador_var.set(self.regra.get('operador', 'é igual a'))
+        self.valor_ref_var.set(self.regra.get('valor_ref', ''))
+        self._carregar_acao(self.then_action_frame, self.regra.get('acao_verdadeiro'))
+        self._carregar_acao(self.else_action_frame, self.regra.get('acao_falso'))
+
+    def _on_cancel(self):
+        self.resultado = None  # Garante que nada é retornado
+        self.destroy()
+
+    def salvar(self):
+        """Coleta os dados da UI e os armazena para serem recuperados pela janela principal."""
+        if not self.campo_ref_var.get() or not self.operador_var.get():
+            messagebox.showwarning("Incompleto", "A condição (campo, operador) deve ser preenchida.", parent=self)
+            return
+
+        self.resultado = {
+            'campo_ref': self.campo_ref_var.get(),
+            'operador': self.operador_var.get(),
+            'valor_ref': self.valor_ref_var.get(),
+            'acao_verdadeiro': self._coletar_acao(self.then_action_frame),
+            'acao_falso': self._coletar_acao(self.else_action_frame)
+        }
+        self.destroy()
 
 
 class FileTab(ttk.Frame):
@@ -22,13 +173,11 @@ class FileTab(ttk.Frame):
     def _criar_widgets(self):
         config_geral_frame = ttk.LabelFrame(self, text="Configurações do Arquivo", padding="10")
         config_geral_frame.pack(side="top", fill="x", expand=False, padx=10, pady=5)
-
         entry_nome_arquivo = ttk.Entry(config_geral_frame, textvariable=self.nome_arquivo_var, width=40)
         entry_nome_arquivo.grid(row=0, column=1, sticky="ew", padx=5)
         entry_nome_arquivo.bind("<FocusOut>", lambda e: self.app_controller.atualizar_titulo_aba(self))
         ttk.Label(config_geral_frame, text="Nome do Arquivo CSV:").grid(row=0, column=0, sticky="w", padx=5)
         Tooltip(entry_nome_arquivo, "Nome final do arquivo. O título da aba será atualizado.")
-
         ttk.Label(config_geral_frame, text="Linhas:").grid(row=0, column=2, sticky="w", padx=5)
         ttk.Entry(config_geral_frame, textvariable=self.num_linhas_var, width=15).grid(row=0, column=3, sticky="ew",
                                                                                        padx=5)
@@ -74,15 +223,31 @@ class FileTab(ttk.Frame):
         self.constraint_listbox.pack(fill="both", expand=True, padx=5, pady=5)
         Tooltip(self.constraint_listbox, "Use Ctrl+Click ou Shift+Click para selecionar múltiplos campos.")
 
+    def _abrir_dialogo_condicional(self, campo_dict):
+        """Abre a janela de diálogo para criar/editar uma regra condicional."""
+        # A condição só pode se basear em campos que vêm ANTES do atual.
+        campos_anteriores = [cf['nome'].get() for cf in self.frames_campos if cf['id'] < campo_dict['id']]
+        if not campos_anteriores:
+            messagebox.showinfo("Aviso",
+                                "A condição depende de campos definidos anteriormente.\nMova este campo para baixo para poder adicionar uma condição.",
+                                parent=self)
+            return
+
+        dialog = ConditionalRuleDialog(self, campos_anteriores, campo_dict['nome'].get(), campo_dict.get('condicional'))
+        self.wait_window(dialog)
+
+        if dialog.resultado is not None:
+            campo_dict['condicional'] = dialog.resultado
+            # Atualiza o estado visual do botão para indicar que há uma regra
+            campo_dict['btn_condicao'].config(style="Accent.TButton")
+        # Se o usuário cancelar, dialog.resultado será None e nada acontece.
+
     def adicionar_campo(self, config=None):
-        # Desativar atualizações de UI durante a criação do campo
-        self.canvas.config(state="disabled")
-        
         config = config or {}
         frame_id = len(self.frames_campos)
         campo_frame = ttk.LabelFrame(self.campos_frame, text=f"Campo {frame_id + 1}", padding=10)
-        
-        # Criar todas as variáveis antes de adicionar widgets à UI
+        campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
+
         nome_var = tk.StringVar(value=config.get('nome', f'campo_{frame_id + 1}'))
         tipos = ['integer', 'float', 'string', 'nome_pessoa', 'boolean', 'datetime', 'uuid', 'lista_opcoes', 'regex',
                  'chave_estrangeira']
@@ -101,10 +266,9 @@ class FileTab(ttk.Frame):
         entry_nome = ttk.Entry(campo_frame, textvariable=nome_var, width=15)
         entry_nome.grid(row=0, column=1, sticky="ew")
         entry_nome.bind("<FocusOut>", lambda e: self._atualizar_lista_unicidade())
-
         ttk.Label(campo_frame, text="Tipo:").grid(row=0, column=2, sticky="w")
-        ttk.Combobox(campo_frame, textvariable=tipo_var, values=tipos, state="readonly", width=12).grid(row=0, column=3,
-                                                                                                        sticky="ew")
+        combo_tipo = ttk.Combobox(campo_frame, textvariable=tipo_var, values=tipos, state="readonly", width=12)
+        combo_tipo.grid(row=0, column=3, sticky="ew")
         spin_rep = ttk.Spinbox(campo_frame, from_=0, to=999, textvariable=repeticao_var, width=5)
         check_pk = ttk.Checkbutton(campo_frame, text="É Chave Primária (PK)", variable=e_pk_var,
                                    command=lambda: (repeticao_var.set("1"), spin_rep.config(
@@ -113,7 +277,6 @@ class FileTab(ttk.Frame):
         ttk.Label(campo_frame, text="Repetir:").grid(row=1, column=4, sticky="w", pady=(5, 0))
         spin_rep.grid(row=1, column=5, sticky="w", pady=(5, 0))
         if e_pk_var.get(): spin_rep.config(state="disabled")
-
         action_buttons_frame = ttk.Frame(campo_frame)
         action_buttons_frame.grid(row=0, column=6, rowspan=2, padx=15)
         btn_subir = ttk.Button(action_buttons_frame, text="↑", width=3,
@@ -125,6 +288,11 @@ class FileTab(ttk.Frame):
         btn_remover = ttk.Button(action_buttons_frame, text="Remover",
                                  command=lambda index=frame_id: self.remover_campo(index))
         btn_remover.pack(side="left", padx=(5, 0))
+
+        btn_condicao = ttk.Button(campo_frame, text="Adicionar Condição")
+        btn_condicao.grid(row=1, column=0, columnspan=2, pady=(5, 0), sticky="ew")
+        Tooltip(btn_condicao, "Adicionar uma regra para gerar este campo\ncom base no valor de um campo anterior.")
+        if config and config.get('condicional'): btn_condicao.config(style="Accent.TButton")
 
         params_frame = ttk.Frame(campo_frame)
         params_frame.grid(row=2, column=0, columnspan=7, sticky='ew', pady=(10, 0))
@@ -186,52 +354,25 @@ class FileTab(ttk.Frame):
         tipo_var.trace_add("write", _atualizar_parametros)
         _atualizar_parametros()
 
-        self.frames_campos.append({
-            'frame': campo_frame, 'id': frame_id, 'nome': nome_var, 'tipo': tipo_var, 'e_pk': e_pk_var,
-            'repeticao': repeticao_var, 'limite1': limite1_var, 'limite2': limite2_var,
-            'opcoes': opcoes_var, 'regex': regex_var, 'fk_arquivo': fk_arquivo_var,
-            'fk_campo': fk_campo_var, 'fk_cardinalidade': fk_cardinalidade_var,
-            'btn_subir': btn_subir, 'btn_descer': btn_descer, 'btn_remover': btn_remover
-        })
-        
-        # Agora que todos os widgets foram criados, podemos adicionar o frame ao layout
-        campo_frame.pack(fill="x", expand=True, padx=5, pady=5)
-        
-        # Reativar atualizações de UI
-        self.canvas.config(state="normal")
-        
+        campo_dict = {'frame': campo_frame, 'id': frame_id, 'nome': nome_var, 'tipo': tipo_var, 'e_pk': e_pk_var,
+                      'repeticao': repeticao_var, 'limite1': limite1_var, 'limite2': limite2_var, 'opcoes': opcoes_var,
+                      'regex': regex_var, 'fk_arquivo': fk_arquivo_var, 'fk_campo': fk_campo_var,
+                      'fk_cardinalidade': fk_cardinalidade_var, 'btn_subir': btn_subir, 'btn_descer': btn_descer,
+                      'btn_remover': btn_remover, 'btn_condicao': btn_condicao,
+                      'condicional': config.get('condicional')}
+        btn_condicao.config(command=lambda c=campo_dict: self._abrir_dialogo_condicional(c))
+        self.frames_campos.append(campo_dict)
         self._atualizar_lista_unicidade()
-        # Usar after(10) em vez de after_idle para melhor desempenho
-        self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
+        self.app_controller.after_idle(lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def _atualizar_lista_unicidade(self):
-        # Otimização: Verificar se realmente precisamos atualizar
-        novos_nomes = [campo_dict['nome'].get() for campo_dict in self.frames_campos]
-        nomes_atuais = [self.constraint_listbox.get(i) for i in range(self.constraint_listbox.size())]
-        
-        # Se os nomes não mudaram, não precisamos atualizar a lista
-        if novos_nomes == nomes_atuais:
-            return
-            
-        # Suspender atualizações da UI
-        self.constraint_listbox.config(state="disabled")
-        
-        # Salvar seleção atual
         selecao_previa = self.constraint_listbox.curselection()
         nomes_selecionados = {self.constraint_listbox.get(i) for i in selecao_previa}
-        
-        # Atualizar lista
         self.constraint_listbox.delete(0, tk.END)
-        for nome in novos_nomes:
-            self.constraint_listbox.insert(tk.END, nome)
-            
-        # Restaurar seleção
+        novos_nomes = [campo_dict['nome'].get() for campo_dict in self.frames_campos]
+        for nome in novos_nomes: self.constraint_listbox.insert(tk.END, nome)
         for i, nome in enumerate(novos_nomes):
-            if nome in nomes_selecionados:
-                self.constraint_listbox.selection_set(i)
-                
-        # Reativar a UI
-        self.constraint_listbox.config(state="normal")
+            if nome in nomes_selecionados: self.constraint_listbox.selection_set(i)
 
     def _atualizar_comandos_e_titulos(self):
         self._atualizar_nomes_campos_ordenacao()
@@ -244,55 +385,29 @@ class FileTab(ttk.Frame):
             campo_dict['btn_remover'].config(command=lambda index=i: self.remover_campo(index))
 
     def _redesenhar_layout_campos(self):
-        # Otimização: Suspender atualizações da UI durante o redesenho
-        self.canvas.config(state="disabled")
         for campo_dict in self.frames_campos: campo_dict['frame'].pack_forget()
         for campo_dict in self.frames_campos: campo_dict['frame'].pack(fill="x", expand=True, padx=5, pady=5)
-        self.canvas.config(state="normal")
-        # Usar after(10) em vez de after_idle para melhor desempenho
-        self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
+        self.app_controller.after_idle(lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def remover_campo(self, index):
         if 0 <= index < len(self.frames_campos):
-            # Desativar atualizações de UI durante a remoção
-            self.canvas.config(state="disabled")
-            
-            # Remover o campo
             self.frames_campos.pop(index)['frame'].destroy()
-            
-            # Atualizar comandos e títulos
             self._atualizar_comandos_e_titulos()
-            
-            # Reativar atualizações de UI
-            self.canvas.config(state="normal")
-            
-            # Atualizar a região de rolagem após a remoção
-            self.app_controller.after(10, lambda: self.app_controller._update_scrollregion(self.canvas))
 
     def _mover_campo(self, index, direcao):
-        # Verificar se o movimento é válido
-        if (direcao == -1 and index == 0) or (direcao == 1 and index == len(self.frames_campos) - 1): 
-            return
-            
-        # Desativar atualizações de UI durante a movimentação
-        self.canvas.config(state="disabled")
-        
-        # Trocar os campos de posição
+        if (direcao == -1 and index == 0) or (direcao == 1 and index == len(self.frames_campos) - 1): return
         nova_posicao = index + direcao
         self.frames_campos[index], self.frames_campos[nova_posicao] = self.frames_campos[nova_posicao], \
             self.frames_campos[index]
-            
-        # Atualizar comandos e títulos
         self._atualizar_comandos_e_titulos()
-        
-        # Redesenhar o layout (o método _redesenhar_layout_campos já reativa a UI)
         self._redesenhar_layout_campos()
 
     def _atualizar_nomes_campos_ordenacao(self):
         nomes_campos = [f['nome'].get() for f in self.frames_campos if f['nome'].get()]
         for rule_dict in self.frames_sort:
             for widget in rule_dict['frame'].winfo_children():
-                if isinstance(widget, ttk.Combobox): widget['values'] = nomes_campos; break
+                if isinstance(widget, ttk.Combobox): widget['values'] = nomes_campos
+                break
 
     def adicionar_regra_sort(self, config=None):
         config = config or {}
@@ -313,7 +428,9 @@ class FileTab(ttk.Frame):
 
     def remover_regra_sort(self, rule_id):
         for r in self.frames_sort:
-            if r['id'] == rule_id: r['frame'].destroy();self.frames_sort.remove(r);break
+            if r['id'] == rule_id: r['frame'].destroy()
+            self.frames_sort.remove(r)
+            break
         for i, r in enumerate(self.frames_sort): r['id'] = i
 
     def coletar_config_aba(self):
@@ -325,6 +442,7 @@ class FileTab(ttk.Frame):
         for widgets in self.frames_campos:
             campo_cfg = {"nome": widgets['nome'].get(), "tipo": widgets['tipo'].get(), "e_pk": widgets['e_pk'].get(),
                          "repeticao": int(widgets['repeticao'].get())}
+            if widgets.get('condicional'): campo_cfg['condicional'] = widgets['condicional']
             tipo = widgets['tipo'].get()
             if tipo in ['integer', 'float', 'string', 'datetime']:
                 campo_cfg['limite'] = (widgets['limite1'].get(), widgets['limite2'].get())

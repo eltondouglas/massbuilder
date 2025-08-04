@@ -1,0 +1,150 @@
+{
+    "arquivos": [
+        {
+            "nome_arquivo": "PESSOA",
+            "num_linhas": 100,
+            "separador": ",",
+            "codificacao": "utf-8",
+            "campos": [
+                {
+                    "nome": "ID_PESSOA",
+                    "tipo": "integer",
+                    "e_pk": true,
+                    "repeticao": 0,
+                    "limite": [
+                        "1",
+                        "100"
+                    ]
+                },
+                {
+                    "nome": "NOME",
+                    "tipo": "nome_pessoa",
+                    "e_pk": false,
+                    "repeticao": 0
+                },
+                {
+                    "nome": "DATA_NASCIMENTO",
+                    "tipo": "datetime",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "limite": [
+                        "1990-01-01",
+                        "2005-12-31"
+                    ]
+                },
+                {
+                    "nome": "TIPO_PESSOA",
+                    "tipo": "lista_opcoes",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "opcoes": [
+                        "PF",
+                        "PJ"
+                    ]
+                },
+                {
+                    "nome": "INSCRICAO_ESTADUAL",
+                    "tipo": "string",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "condicional": {
+                        "campo_ref": "TIPO_PESSOA",
+                        "operador": "\u00e9 igual a",
+                        "valor_ref": "PF",
+                        "acao_verdadeiro": {
+                            "tipo": "lista_opcoes",
+                            "opcoes": [
+                                "0",
+                                "1"
+                            ]
+                        },
+                        "acao_falso": {
+                            "tipo": "Nulo/Vazio"
+                        }
+                    },
+                    "limite": [
+                        "",
+                        ""
+                    ]
+                }
+            ],
+            "regras_sort": [],
+            "constraint_unicidade": []
+        },
+        {
+            "nome_arquivo": "PEDIDO",
+            "num_linhas": 100,
+            "separador": ",",
+            "codificacao": "utf-8",
+            "campos": [
+                {
+                    "nome": "ID_PEDIDO",
+                    "tipo": "integer",
+                    "e_pk": true,
+                    "repeticao": 1,
+                    "limite": [
+                        "1",
+                        "100"
+                    ]
+                },
+                {
+                    "nome": "DATA_PEDIDO",
+                    "tipo": "datetime",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "limite": [
+                        "2020-01-20",
+                        "2021-12-31"
+                    ]
+                },
+                {
+                    "nome": "ID_PESSOA_FK",
+                    "tipo": "chave_estrangeira",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "fk_arquivo": "PESSOA",
+                    "fk_campo": "ID_PESSOA",
+                    "cardinalidade": "Um-para-Muitos (1:N)"
+                }
+            ],
+            "regras_sort": [],
+            "constraint_unicidade": []
+        },
+        {
+            "nome_arquivo": "CONTATOS",
+            "num_linhas": 500,
+            "separador": ",",
+            "codificacao": "utf-8",
+            "campos": [
+                {
+                    "nome": "ID_CONTATO",
+                    "tipo": "integer",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "limite": [
+                        "1",
+                        "400"
+                    ]
+                },
+                {
+                    "nome": "TELEFONE",
+                    "tipo": "regex",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "regex_pattern": "\\([1-9]{2}\\)9[1-9]{4}-[1-9]{4}"
+                },
+                {
+                    "nome": "PESSOA_FK",
+                    "tipo": "chave_estrangeira",
+                    "e_pk": false,
+                    "repeticao": 0,
+                    "fk_arquivo": "PESSOA",
+                    "fk_campo": "ID_PESSOA",
+                    "cardinalidade": "Um-para-Muitos (1:N)"
+                }
+            ],
+            "regras_sort": [],
+            "constraint_unicidade": []
+        }
+    ]
+}
