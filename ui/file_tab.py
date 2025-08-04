@@ -120,14 +120,26 @@ class ConditionalRuleDialog(tk.Toplevel):
 
     def _carregar_acao(self, painel, config_acao):
         """Carrega uma configuração em um painel de ação."""
-        if not config_acao: return
+        if not config_acao:
+            return
+
         painel['tipo_var'].set(config_acao.get('tipo', ''))
-        if 'valor_fixo' in config_acao: painel['valor1_var'].set(config_acao['valor_fixo'])
-        if 'limite' in config_acao: painel['valor1_var'].set(config_acao['limite'][0])
-        painel['valor2_var'].set(
-            config_acao['limite'][1])
-        if 'regex_pattern' in config_acao: painel['valor1_var'].set(config_acao['regex_pattern'])
-        if 'opcoes' in config_acao: painel['valor1_var'].set(", ".join(config_acao['opcoes']))
+
+        # Verifica cada tipo de valor e define apenas se existir
+        if 'valor_fixo' in config_acao:
+            painel['valor1_var'].set(config_acao['valor_fixo'])
+
+        if 'limite' in config_acao:
+            limite = config_acao['limite']
+            if isinstance(limite, (list, tuple)) and len(limite) >= 2:
+                painel['valor1_var'].set(limite[0])
+                painel['valor2_var'].set(limite[1])
+
+        if 'regex_pattern' in config_acao:
+            painel['valor1_var'].set(config_acao['regex_pattern'])
+
+        if 'opcoes' in config_acao:
+            painel['valor1_var'].set(", ".join(config_acao['opcoes']))
 
     def _carregar_regra(self):
         """Carrega uma regra existente na UI do diálogo."""

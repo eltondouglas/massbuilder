@@ -43,14 +43,14 @@
                     ]
                 },
                 {
-                    "nome": "INSCRICAO_ESTADUAL",
-                    "tipo": "string",
+                    "nome": "FG_SIMPLES_NACIONAL",
+                    "tipo": "integer",
                     "e_pk": false,
                     "repeticao": 0,
                     "condicional": {
                         "campo_ref": "TIPO_PESSOA",
                         "operador": "\u00e9 igual a",
-                        "valor_ref": "PF",
+                        "valor_ref": "PJ",
                         "acao_verdadeiro": {
                             "tipo": "lista_opcoes",
                             "opcoes": [
@@ -103,7 +103,7 @@
                     "e_pk": false,
                     "repeticao": 0,
                     "fk_arquivo": "PESSOA",
-                    "fk_campo": "ID_PESSOA",
+                    "fk_campo": "",
                     "cardinalidade": "Um-para-Muitos (1:N)"
                 }
             ],
@@ -139,7 +139,7 @@
                     "e_pk": false,
                     "repeticao": 0,
                     "fk_arquivo": "PESSOA",
-                    "fk_campo": "ID_PESSOA",
+                    "fk_campo": "",
                     "cardinalidade": "Um-para-Muitos (1:N)"
                 }
             ],
